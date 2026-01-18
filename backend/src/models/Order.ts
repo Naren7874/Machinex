@@ -348,9 +348,8 @@ orderSchema.methods.addOffer = async function (offer: {
     await this.save();
 };
 
-// Pre-save middleware
-orderSchema.pre('save', function () {
-    // Generate order ID if not exists
+// Pre-validate middleware - generate orderId before validation
+orderSchema.pre('validate', function () {
     if (!this.orderId) {
         const timestamp = Date.now().toString().slice(-6);
         const random = Math.floor(Math.random() * 1000)
@@ -358,7 +357,10 @@ orderSchema.pre('save', function () {
             .padStart(3, '0');
         this.orderId = `ORD-${new Date().getFullYear()}-${timestamp}${random}`;
     }
+});
 
+// Pre-save middleware
+orderSchema.pre('save', function () {
     // Calculate commission on price change
     if (this.isModified('finalPrice') || this.isModified('commissionRate')) {
         this.commissionAmount = (this.finalPrice * this.commissionRate) / 100;

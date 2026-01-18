@@ -8,14 +8,46 @@ class Database {
     private static instance: Database;
     private retries = 0;
     private isConnected = false;
+    private listenersInitialized = false;
 
-    private constructor() { }
+    private constructor() {
+        this.initConnectionListeners();
+    }
 
     static getInstance(): Database {
         if (!Database.instance) {
             Database.instance = new Database();
         }
         return Database.instance;
+    }
+
+    /**
+     * Initialize connection event listeners once
+     */
+    private initConnectionListeners(): void {
+        if (this.listenersInitialized) {
+            return;
+        }
+
+        mongoose.connection.on('error', (error) => {
+            logger.error('MongoDB connection error:', error);
+            this.isConnected = false;
+        });
+
+        mongoose.connection.on('disconnected', () => {
+            logger.warn('MongoDB disconnected. Attempting to reconnect...');
+            this.isConnected = false;
+            this.handleReconnect();
+        });
+
+        mongoose.connection.on('reconnected', () => {
+            logger.info('✅ MongoDB reconnected');
+            this.isConnected = true;
+            this.retries = 0;
+        });
+
+        this.listenersInitialized = true;
+        logger.info('MongoDB connection listeners initialized');
     }
 
     async connect(): Promise<void> {
@@ -41,24 +73,6 @@ class Database {
             this.isConnected = true;
             this.retries = 0;
             logger.info('✅ MongoDB connected successfully');
-
-            // Connection event handlers
-            mongoose.connection.on('error', (error) => {
-                logger.error('MongoDB connection error:', error);
-                this.isConnected = false;
-            });
-
-            mongoose.connection.on('disconnected', () => {
-                logger.warn('MongoDB disconnected. Attempting to reconnect...');
-                this.isConnected = false;
-                this.handleReconnect();
-            });
-
-            mongoose.connection.on('reconnected', () => {
-                logger.info('✅ MongoDB reconnected');
-                this.isConnected = true;
-                this.retries = 0;
-            });
 
         } catch (error) {
             logger.error('❌ MongoDB connection failed:', error);

@@ -337,18 +337,15 @@ listingSchema.virtual('daysLeft').get(function () {
 
 // Methods
 listingSchema.methods.incrementView = async function (): Promise<void> {
-    this.views += 1;
-    await this.save();
+    await this.updateOne({ $inc: { views: 1 } });
 };
 
 listingSchema.methods.incrementInquiry = async function (): Promise<void> {
-    this.inquiries += 1;
-    await this.save();
+    await this.updateOne({ $inc: { inquiries: 1 } });
 };
 
 listingSchema.methods.incrementWhatsAppClicks = async function (): Promise<void> {
-    this.whatsappClicks += 1;
-    await this.save();
+    await this.updateOne({ $inc: { whatsappClicks: 1 } });
 };
 
 // Pre-save middleware

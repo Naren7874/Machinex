@@ -211,23 +211,26 @@ paymentSchema.methods.addRefund = async function (refundData: {
     refundId: string;
     amount: number;
     reason?: string;
+    status?: 'pending' | 'processed';
     notes?: string;
 }): Promise<void> {
+    const refundStatus = refundData.status || 'pending';
+
     this.refunds.push({
         refundId: refundData.refundId,
         amount: refundData.amount,
         reason: refundData.reason,
-        status: 'pending',
+        status: refundStatus,
         timestamp: new Date(),
         notes: refundData.notes,
     });
 
-    // Update status based on refund amount
-    const totalRefunded =
-        this.refunds
-            .filter((r: { status: string; amount: number }) => r.status === 'processed')
-            .reduce((sum: number, r: { amount: number }) => sum + r.amount, 0) + refundData.amount;
+    // Calculate total from processed refunds only
+    const totalRefunded = this.refunds
+        .filter((r: { status: string }) => r.status === 'processed')
+        .reduce((sum: number, r: { amount: number }) => sum + r.amount, 0);
 
+    // Update status based on processed refund amount
     if (totalRefunded >= this.amount) {
         this.status = 'refunded';
         this.refundedAt = new Date();

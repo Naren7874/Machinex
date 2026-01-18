@@ -243,28 +243,28 @@ gallerySchema.methods.addImage = async function (imageData: {
 };
 
 gallerySchema.methods.incrementView = async function (): Promise<void> {
-    this.viewCount += 1;
-    await this.save();
+    await this.updateOne({ $inc: { viewCount: 1 } });
 };
 
 gallerySchema.methods.incrementDownload = async function (): Promise<void> {
-    this.downloadCount += 1;
-    await this.save();
+    await this.updateOne({ $inc: { downloadCount: 1 } });
 };
 
 gallerySchema.methods.getPublicUrl = function (): string {
     return `/gallery/${this.galleryId}`;
 };
 
-// Pre-save middleware
-gallerySchema.pre('save', function () {
-    // Generate gallery ID if not exists
+// Pre-validate middleware - generate galleryId before validation
+gallerySchema.pre('validate', function () {
     if (!this.galleryId) {
         const timestamp = Date.now().toString(36);
         const random = Math.random().toString(36).substring(2, 8);
         this.galleryId = `gal-${timestamp}-${random}`;
     }
+});
 
+// Pre-save middleware - handle expiration
+gallerySchema.pre('save', function () {
     // Set expiration if not permanent (default: 30 days)
     if (!this.isPermanent && !this.expiresAt) {
         this.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);

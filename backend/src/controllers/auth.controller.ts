@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { User } from '../models';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import logger from '../utils/logger';
@@ -19,8 +20,15 @@ const generateToken = (userId: string): string => {
 };
 
 /**
+ * Generate 6-digit secure OTP using crypto
+ */
+const generateOtp = (): string => {
+    return crypto.randomInt(100000, 999999).toString();
+};
+
+/**
  * @route   POST /api/auth/register
- * @desc    Register a new user
+ * @desc    Register a new user (does NOT issue token until verified)
  * @access  Public
  */
 export const register = asyncHandler(async (req: Request, res: Response) => {
@@ -38,43 +46,41 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
         throw Errors.conflict('Phone number already registered');
     }
 
-    // Create user
+    // Generate OTP
+    const otp = generateOtp();
+
+    // Create user with isVerified=false
     const user = await User.create({
         name,
         phone,
         email,
+        isVerified: false,
+        verificationCode: otp, // Will be hashed in pre-save
+        verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
 
-    // Generate token
-    const token = generateToken(user._id.toString());
-
-    logger.info(`New user registered: ${phone}`);
+    // TODO: Send OTP via WhatsApp/SMS
+    logger.info(`Registration OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
 
     res.status(201).json({
         success: true,
-        message: 'Registration successful',
+        message: 'Registration initiated. Please verify your phone with the OTP sent.',
         data: {
-            user: {
-                id: user._id,
-                name: user.name,
-                phone: user.phone,
-                email: user.email,
-                role: user.role,
-            },
-            token,
+            phone: user.phone,
+            requiresVerification: true,
+            expiresIn: '10 minutes',
         },
     });
 });
 
 /**
- * @route   POST /api/auth/login
- * @desc    Login user with phone + OTP verification
+ * @route   POST /api/auth/send-otp
+ * @desc    Send OTP to phone (for existing or new users)
  * @access  Public
  */
-export const login = asyncHandler(async (req: Request, res: Response) => {
-    const { phone, verificationCode } = req.body;
+export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone } = req.body;
 
-    // Validate required fields
     if (!phone) {
         throw Errors.badRequest('Please provide phone number');
     }
@@ -83,7 +89,58 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     const user = await User.findOne({ phone });
 
     if (!user) {
-        throw Errors.unauthorized('User not found');
+        throw Errors.notFound('User not found. Please register first.');
+    }
+
+    // Check if account is locked
+    if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
+        const remainingTime = Math.ceil(
+            (user.accountLockedUntil.getTime() - Date.now()) / 60000
+        );
+        throw Errors.unauthorized(
+            `Account is temporarily locked. Try again in ${remainingTime} minutes.`
+        );
+    }
+
+    // Generate new OTP
+    const otp = generateOtp();
+
+    // Update user with new OTP
+    user.verificationCode = otp;
+    user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await user.save();
+
+    // TODO: Send OTP via WhatsApp/SMS
+    logger.info(`OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
+
+    res.json({
+        success: true,
+        message: 'OTP sent successfully',
+        data: {
+            phone,
+            expiresIn: '10 minutes',
+        },
+    });
+});
+
+/**
+ * @route   POST /api/auth/verify-otp
+ * @desc    Verify OTP and issue token (for both registration and login)
+ * @access  Public
+ */
+export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { phone, verificationCode } = req.body;
+
+    // Validate required fields
+    if (!phone || !verificationCode) {
+        throw Errors.badRequest('Please provide phone and verification code');
+    }
+
+    // Find user
+    const user = await User.findOne({ phone });
+
+    if (!user) {
+        throw Errors.notFound('User not found');
     }
 
     // Check if account is locked
@@ -91,34 +148,47 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
         throw Errors.unauthorized('Account is temporarily locked. Try again later.');
     }
 
-    // If verification code provided, verify it
-    if (verificationCode) {
-        const isMatch = await user.compareVerificationCode(verificationCode);
+    // Check if OTP is expired
+    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+        throw Errors.badRequest('Verification code has expired. Please request a new one.');
+    }
 
-        if (!isMatch) {
-            user.loginAttempts += 1;
-            if (user.loginAttempts >= 5) {
-                await user.lockAccount();
-            }
-            await user.save();
-            throw Errors.unauthorized('Invalid verification code');
+    // Verify OTP
+    const isMatch = await user.compareVerificationCode(verificationCode);
+
+    if (!isMatch) {
+        // Increment login attempts
+        user.loginAttempts += 1;
+
+        if (user.loginAttempts >= 5) {
+            await user.lockAccount();
+            throw Errors.unauthorized(
+                'Too many failed attempts. Account locked for 15 minutes.'
+            );
         }
 
-        // Reset login attempts and mark as verified
-        user.loginAttempts = 0;
-        user.isVerified = true;
-        user.lastLogin = new Date();
         await user.save();
+        throw Errors.unauthorized(
+            `Invalid verification code. ${5 - user.loginAttempts} attempts remaining.`
+        );
     }
+
+    // OTP is valid - mark user as verified and issue token
+    user.isVerified = true;
+    user.loginAttempts = 0;
+    user.lastLogin = new Date();
+    user.verificationCode = undefined;
+    user.verificationCodeExpires = undefined;
+    await user.save();
 
     // Generate token
     const token = generateToken(user._id.toString());
 
-    logger.info(`User logged in: ${phone}`);
+    logger.info(`User verified and logged in: ${phone}`);
 
     res.json({
         success: true,
-        message: 'Login successful',
+        message: 'Verification successful',
         data: {
             user: {
                 id: user._id,
@@ -134,40 +204,51 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * @route   POST /api/auth/send-otp
- * @desc    Send OTP to phone
+ * @route   POST /api/auth/login
+ * @desc    Login - sends OTP (does NOT issue token directly)
  * @access  Public
  */
-export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
+export const login = asyncHandler(async (req: Request, res: Response) => {
     const { phone } = req.body;
 
+    // Validate required fields
     if (!phone) {
         throw Errors.badRequest('Please provide phone number');
     }
 
-    // Find or create user
-    let user = await User.findOne({ phone });
+    // Find user
+    const user = await User.findOne({ phone });
 
     if (!user) {
-        user = await User.create({ phone });
+        throw Errors.unauthorized('User not found. Please register first.');
     }
 
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Check if account is locked
+    if (user.accountLockedUntil && user.accountLockedUntil > new Date()) {
+        const remainingTime = Math.ceil(
+            (user.accountLockedUntil.getTime() - Date.now()) / 60000
+        );
+        throw Errors.unauthorized(
+            `Account is temporarily locked. Try again in ${remainingTime} minutes.`
+        );
+    }
 
-    // Set verification code (will be hashed in pre-save)
+    // Generate and send OTP
+    const otp = generateOtp();
+
     user.verificationCode = otp;
-    user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
     // TODO: Send OTP via WhatsApp/SMS
-    logger.info(`OTP sent to ${phone}: ${otp}`); // Remove in production
+    logger.info(`Login OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
 
     res.json({
         success: true,
-        message: 'OTP sent successfully',
+        message: 'OTP sent to your phone. Please verify to complete login.',
         data: {
             phone,
+            requiresVerification: true,
             expiresIn: '10 minutes',
         },
     });
@@ -176,7 +257,7 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
 /**
  * @route   GET /api/auth/me
  * @desc    Get current user profile
- * @access  Private
+ * @access  Private (verified users only)
  */
 export const getMe = asyncHandler(async (req: Request, res: Response) => {
     const user = req.user;
@@ -211,7 +292,7 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 /**
  * @route   PUT /api/auth/profile
  * @desc    Update user profile
- * @access  Private
+ * @access  Private (verified users only)
  */
 export const updateProfile = asyncHandler(async (req: Request, res: Response) => {
     const user = req.user;

@@ -36,18 +36,40 @@ api.interceptors.response.use(
 );
 
 // ==========================================
-// AUTH SERVICES
+// AUTH SERVICES (OTP-based flow)
 // ==========================================
 
 export const authService = {
-    register: async (data: { name: string; email: string; password: string; phone: string }) => {
+    /**
+     * Register a new user (sends OTP, no token)
+     */
+    register: async (data: { name: string; phone: string; email?: string }) => {
         const response = await api.post('/auth/register', data);
         return response.data;
     },
 
-    login: async (data: { email: string; password: string }) => {
+    /**
+     * Request OTP for login
+     */
+    login: async (data: { phone: string }) => {
         const response = await api.post('/auth/login', data);
-        if (response.data.data.token) {
+        return response.data;
+    },
+
+    /**
+     * Send OTP to phone number
+     */
+    sendOtp: async (data: { phone: string }) => {
+        const response = await api.post('/auth/send-otp', data);
+        return response.data;
+    },
+
+    /**
+     * Verify OTP and get token
+     */
+    verifyOtp: async (data: { phone: string; verificationCode: string }) => {
+        const response = await api.post('/auth/verify-otp', data);
+        if (response.data.data?.token) {
             localStorage.setItem('token', response.data.data.token);
             localStorage.setItem('user', JSON.stringify(response.data.data.user));
         }
@@ -69,11 +91,6 @@ export const authService = {
         return response.data;
     },
 
-    changePassword: async (data: { currentPassword: string; newPassword: string }) => {
-        const response = await api.put('/auth/change-password', data);
-        return response.data;
-    },
-
     isAuthenticated: () => {
         return !!localStorage.getItem('token');
     },
@@ -85,13 +102,13 @@ export const authService = {
 };
 
 // ==========================================
-// MACHINERY SERVICES
+// LISTING SERVICES
 // ==========================================
 
-export interface MachineryFilters {
+export interface ListingFilters {
     category?: string;
-    state?: string;
-    city?: string;
+    machineType?: string;
+    location?: string;
     minPrice?: number;
     maxPrice?: number;
     condition?: string;
@@ -102,58 +119,55 @@ export interface MachineryFilters {
     limit?: number;
 }
 
-export interface MachineryData {
+export interface ListingData {
     title: string;
     description: string;
     category: string;
-    brand: string;
-    model: string;
-    year: number;
+    machineType: string;
+    brand?: string;
+    modelName?: string;
+    year?: number;
     condition: string;
     price: number;
-    negotiable?: boolean;
-    images: string[];
-    location: {
-        state: string;
-        city: string;
-        pincode: string;
-    };
-    specifications?: {
-        engineHours?: number;
-        horsePower?: number;
-        fuelType?: string;
-    };
+    isNegotiable?: boolean;
+    images?: Array<{
+        url: string;
+        cloudinaryId: string;
+        isFeatured?: boolean;
+    }>;
+    location: string;
+    specifications?: Record<string, unknown>;
 }
 
-export const machineryService = {
-    getAll: async (filters: MachineryFilters = {}) => {
+export const listingService = {
+    getAll: async (filters: ListingFilters = {}) => {
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([key, value]) => {
             if (value !== undefined && value !== '') {
                 params.append(key, String(value));
             }
         });
-        const response = await api.get(`/machinery?${params.toString()}`);
+        const response = await api.get(`/listings?${params.toString()}`);
         return response.data;
     },
 
     getById: async (id: string) => {
-        const response = await api.get(`/machinery/${id}`);
+        const response = await api.get(`/listings/${id}`);
         return response.data;
     },
 
-    create: async (data: MachineryData) => {
-        const response = await api.post('/machinery', data);
+    create: async (data: ListingData) => {
+        const response = await api.post('/listings', data);
         return response.data;
     },
 
-    update: async (id: string, data: Partial<MachineryData>) => {
-        const response = await api.put(`/machinery/${id}`, data);
+    update: async (id: string, data: Partial<ListingData>) => {
+        const response = await api.put(`/listings/${id}`, data);
         return response.data;
     },
 
     delete: async (id: string) => {
-        const response = await api.delete(`/machinery/${id}`);
+        const response = await api.delete(`/listings/${id}`);
         return response.data;
     },
 
@@ -164,7 +178,17 @@ export const machineryService = {
                 queryParams.append(key, String(value));
             }
         });
-        const response = await api.get(`/machinery/my-listings?${queryParams.toString()}`);
+        const response = await api.get(`/listings/my-listings?${queryParams.toString()}`);
+        return response.data;
+    },
+
+    sendInquiry: async (id: string) => {
+        const response = await api.post(`/listings/${id}/inquiry`);
+        return response.data;
+    },
+
+    trackWhatsAppClick: async (id: string) => {
+        const response = await api.post(`/listings/${id}/whatsapp-click`);
         return response.data;
     },
 };

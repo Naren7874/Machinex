@@ -165,8 +165,8 @@ botStateSchema.pre('save', function () {
         this.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
     }
 
-    // Mark as completed if flow reaches end
-    if (this.currentStep === 'completed') {
+    // Increment completedFlows only when currentStep transitions to 'completed'
+    if (this.isModified('currentStep') && this.currentStep === 'completed') {
         this.completedFlows += 1;
     }
 });

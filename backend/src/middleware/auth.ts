@@ -19,7 +19,7 @@ interface JwtPayload {
 }
 
 /**
- * Authentication middleware - verifies JWT token
+ * Authentication middleware - verifies JWT token AND checks isVerified
  */
 export const authenticate = async (
     req: Request,
@@ -46,7 +46,7 @@ export const authenticate = async (
             throw new Error('JWT_SECRET is not defined');
         }
 
-        const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+        const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as JwtPayload;
 
         // Find user
         const user = await User.findById(decoded.id);
@@ -64,6 +64,16 @@ export const authenticate = async (
             res.status(401).json({
                 success: false,
                 message: 'Account is temporarily locked.',
+            });
+            return;
+        }
+
+        // Check if user is verified
+        if (!user.isVerified) {
+            res.status(403).json({
+                success: false,
+                message: 'Phone number not verified. Please verify your phone first.',
+                requiresVerification: true,
             });
             return;
         }
@@ -123,7 +133,7 @@ export const authorize = (...roles: string[]) => {
 };
 
 /**
- * Optional authentication - attaches user if token exists
+ * Optional authentication - attaches user if token exists (doesn't require verification)
  */
 export const optionalAuth = async (
     req: Request,
@@ -138,7 +148,7 @@ export const optionalAuth = async (
             const jwtSecret = process.env.JWT_SECRET;
 
             if (jwtSecret) {
-                const decoded = jwt.verify(token, jwtSecret) as JwtPayload;
+                const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as JwtPayload;
                 const user = await User.findById(decoded.id);
                 if (user && (!user.accountLockedUntil || user.accountLockedUntil <= new Date())) {
                     req.user = user;

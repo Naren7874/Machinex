@@ -34,9 +34,13 @@ const systemLogSchema = new Schema<ISystemLog>(
         // Log Identification
         logId: {
             type: String,
-            required: true,
             unique: true,
             index: true,
+            default: () => {
+                const timestamp = Date.now().toString(36);
+                const random = Math.random().toString(36).substring(2, 8);
+                return `log-${timestamp}-${random}`;
+            },
         },
         level: {
             type: String,
@@ -112,16 +116,6 @@ systemLogSchema.index({ createdAt: -1 });
 
 // TTL index for auto-deletion (keep logs for 90 days)
 systemLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
-
-// Pre-save middleware
-systemLogSchema.pre('save', function () {
-    // Generate log ID if not exists
-    if (!this.logId) {
-        const timestamp = Date.now().toString(36);
-        const random = Math.random().toString(36).substring(2, 8);
-        this.logId = `log-${timestamp}-${random}`;
-    }
-});
 
 export const SystemLog = mongoose.model<ISystemLog>('SystemLog', systemLogSchema);
 export default SystemLog;

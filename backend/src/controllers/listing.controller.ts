@@ -3,6 +3,51 @@ import { Listing } from '../models';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import logger from '../utils/logger';
 
+// Allowlist of sortable fields and directions
+const ALLOWED_SORT_FIELDS = ['price', 'createdAt', 'views', 'inquiries', 'rating'] as const;
+const ALLOWED_SORT_DIRECTIONS = ['asc', 'desc', '1', '-1'] as const;
+
+/**
+ * Parse and validate sort parameter
+ * @param sortParam - Sort parameter from query (e.g., '-price', 'createdAt:desc')
+ * @returns Sanitized sort object or default sort
+ */
+const parseSortParam = (sortParam: unknown): Record<string, 1 | -1> => {
+    const defaultSort: Record<string, 1 | -1> = { createdAt: -1 };
+
+    if (!sortParam || typeof sortParam !== 'string') {
+        return defaultSort;
+    }
+
+    // Handle format: '-field' or 'field'
+    if (sortParam.startsWith('-') || sortParam.startsWith('+')) {
+        const direction = sortParam.startsWith('-') ? -1 : 1;
+        const field = sortParam.slice(1);
+
+        if (ALLOWED_SORT_FIELDS.includes(field as typeof ALLOWED_SORT_FIELDS[number])) {
+            return { [field]: direction };
+        }
+        return defaultSort;
+    }
+
+    // Handle format: 'field:direction' or 'field'
+    const [field, dir] = sortParam.split(':');
+
+    if (!ALLOWED_SORT_FIELDS.includes(field as typeof ALLOWED_SORT_FIELDS[number])) {
+        return defaultSort;
+    }
+
+    if (dir) {
+        if (!ALLOWED_SORT_DIRECTIONS.includes(dir as typeof ALLOWED_SORT_DIRECTIONS[number])) {
+            return defaultSort;
+        }
+        const direction = dir === 'desc' || dir === '-1' ? -1 : 1;
+        return { [field]: direction };
+    }
+
+    return { [field]: 1 };
+};
+
 /**
  * @route   GET /api/listings
  * @desc    Get all listings with filters
@@ -19,7 +64,7 @@ export const getAllListings = asyncHandler(async (req: Request, res: Response) =
         brand,
         search,
         status = 'approved',
-        sort = '-createdAt',
+        sort,
         page = 1,
         limit = 10,
     } = req.query;
@@ -48,11 +93,14 @@ export const getAllListings = asyncHandler(async (req: Request, res: Response) =
     const limitNum = Math.min(50, Math.max(1, Number(limit)));
     const skip = (pageNum - 1) * limitNum;
 
+    // Validate and sanitize sort parameter
+    const sanitizedSort = parseSortParam(sort);
+
     // Execute query
     const [listings, total] = await Promise.all([
         Listing.find(query)
             .populate('seller', 'name phone location rating')
-            .sort(sort as string)
+            .sort(sanitizedSort)
             .skip(skip)
             .limit(limitNum),
         Listing.countDocuments(query),
