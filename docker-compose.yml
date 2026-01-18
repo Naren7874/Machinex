@@ -13,7 +13,7 @@ services:
       - PORT=3000
       - MONGODB_URI=mongodb://mongodb:27017/machinery
       - CORS_ORIGIN=http://localhost:5173
-      - JWT_SECRET=${JWT_SECRET:-change_this_secret_in_production}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
       - JWT_EXPIRES_IN=7d
     depends_on:
       - mongodb
