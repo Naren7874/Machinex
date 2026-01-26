@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { User } from '../models';
 import { asyncHandler, Errors } from '../middleware/errorHandler';
 import logger from '../utils/logger';
+import whatsappService from '../services/whatsapp.service';
 
 /**
  * Generate JWT token
@@ -59,8 +60,9 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
         verificationCodeExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
 
-    // TODO: Send OTP via WhatsApp/SMS
-    logger.info(`Registration OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
+    // Send OTP via WhatsApp
+    await whatsappService.sendOtp(phone, otp);
+    logger.info(`Registration OTP generated for ${phone.slice(-4).padStart(phone.length, '*')}`);
 
     res.status(201).json({
         success: true,
@@ -110,8 +112,9 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
     user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // TODO: Send OTP via WhatsApp/SMS
-    logger.info(`OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
+    // Send OTP via WhatsApp
+    await whatsappService.sendOtp(phone, otp);
+    logger.info(`OTP generated for ${phone.slice(-4).padStart(phone.length, '*')}`);
 
     res.json({
         success: true,
@@ -240,8 +243,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     user.verificationCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // TODO: Send OTP via WhatsApp/SMS
-    logger.info(`Login OTP sent to ${phone.slice(-4).padStart(phone.length, '*')}`);
+    // Send OTP via WhatsApp
+    await whatsappService.sendOtp(phone, otp);
+    logger.info(`Login OTP generated for ${phone.slice(-4).padStart(phone.length, '*')}`);
 
     res.json({
         success: true,

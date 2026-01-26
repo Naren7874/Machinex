@@ -215,7 +215,7 @@ const analyticsSchema = new Schema<IAnalytics>(
 );
 
 // Indexes
-analyticsSchema.index({ date: 1 }, { unique: true });
+// analyticsSchema.index({ date: 1 }, { unique: true }); // Already indexed in schema
 analyticsSchema.index({ createdAt: -1 });
 
 // Pre-save middleware

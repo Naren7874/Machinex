@@ -100,7 +100,6 @@ const systemLogSchema = new Schema<ISystemLog>(
         timestamp: {
             type: Date,
             default: Date.now,
-            index: true,
         },
     },
     {
@@ -115,6 +114,10 @@ systemLogSchema.index({ userPhone: 1, timestamp: -1 });
 systemLogSchema.index({ createdAt: -1 });
 
 // TTL index for auto-deletion (keep logs for 90 days)
+// systemLogSchema.index({ level: 1, timestamp: -1 }); // Keeping compound index
+// systemLogSchema.index({ module: 1, timestamp: -1 }); // Keeping compound index
+// systemLogSchema.index({ userPhone: 1, timestamp: -1 }); // Keeping compound index
+// Note: createdAt -1 already defined above at line 115
 systemLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 export const SystemLog = mongoose.model<ISystemLog>('SystemLog', systemLogSchema);

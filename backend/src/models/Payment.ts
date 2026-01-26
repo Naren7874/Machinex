@@ -175,7 +175,7 @@ const paymentSchema = new Schema<IPayment>(
 );
 
 // Indexes
-paymentSchema.index({ razorpayOrderId: 1 });
+// paymentSchema.index({ razorpayOrderId: 1 }); // Already indexed in field definition (line 103)
 paymentSchema.index({ status: 1, createdAt: -1 });
 paymentSchema.index({ user: 1, status: 1 });
 

@@ -187,11 +187,12 @@ const gallerySchema = new Schema<IGallery>(
 );
 
 // Indexes
-gallerySchema.index({ galleryId: 1 });
+// gallerySchema.index({ galleryId: 1 }); // Already indexed in schema
+// gallerySchema.index({ expiresAt: 1 }); // Already indexed in schema
 gallerySchema.index({ createdBy: 1, isPublic: 1 });
 gallerySchema.index({ listing: 1 });
 gallerySchema.index({ tags: 1 });
-gallerySchema.index({ expiresAt: 1 });
+// gallerySchema.index({ expiresAt: 1 }); // Already indexed in schema
 
 // Virtuals
 gallerySchema.virtual('totalImages').get(function () {

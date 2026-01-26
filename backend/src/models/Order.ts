@@ -297,8 +297,8 @@ const orderSchema = new Schema<IOrder>(
 orderSchema.index({ buyer: 1, paymentStatus: 1 });
 orderSchema.index({ seller: 1, paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
-orderSchema.index({ orderId: 1 });
-orderSchema.index({ razorpayOrderId: 1 });
+// orderSchema.index({ orderId: 1 }); // Already indexed in schema
+// orderSchema.index({ razorpayOrderId: 1 }); // Already indexed in schema
 
 // Virtuals
 orderSchema.virtual('isCompleted').get(function () {
