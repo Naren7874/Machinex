@@ -13,7 +13,7 @@
     "build:all": "npm run build:backend && npm run build:frontend",
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm run preview",
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install && cd ../whatsapp-bot && npm install",
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && npm test",
     "test:frontend": "cd frontend && npm test",

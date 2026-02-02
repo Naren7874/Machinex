@@ -13,39 +13,39 @@ const ALLOWED_SORT_DIRECTIONS = ['asc', 'desc', '1', '-1'] as const;
  * @returns Sanitized sort object or default sort
  */
 const parseSortParam = (sortParam: unknown): Record<string, 1 | -1> => {
-    const defaultSort: Record<string, 1 | -1> = { createdAt: -1 };
+  const defaultSort: Record<string, 1 | -1> = { createdAt: -1 };
 
-    if (!sortParam || typeof sortParam !== 'string') {
-        return defaultSort;
+  if (!sortParam || typeof sortParam !== 'string') {
+    return defaultSort;
+  }
+
+  // Handle format: '-field' or 'field'
+  if (sortParam.startsWith('-') || sortParam.startsWith('+')) {
+    const direction = sortParam.startsWith('-') ? -1 : 1;
+    const field = sortParam.slice(1);
+
+    if (ALLOWED_SORT_FIELDS.includes(field as (typeof ALLOWED_SORT_FIELDS)[number])) {
+      return { [field]: direction };
     }
+    return defaultSort;
+  }
 
-    // Handle format: '-field' or 'field'
-    if (sortParam.startsWith('-') || sortParam.startsWith('+')) {
-        const direction = sortParam.startsWith('-') ? -1 : 1;
-        const field = sortParam.slice(1);
+  // Handle format: 'field:direction' or 'field'
+  const [field, dir] = sortParam.split(':');
 
-        if (ALLOWED_SORT_FIELDS.includes(field as typeof ALLOWED_SORT_FIELDS[number])) {
-            return { [field]: direction };
-        }
-        return defaultSort;
+  if (!ALLOWED_SORT_FIELDS.includes(field as (typeof ALLOWED_SORT_FIELDS)[number])) {
+    return defaultSort;
+  }
+
+  if (dir) {
+    if (!ALLOWED_SORT_DIRECTIONS.includes(dir as (typeof ALLOWED_SORT_DIRECTIONS)[number])) {
+      return defaultSort;
     }
+    const direction = dir === 'desc' || dir === '-1' ? -1 : 1;
+    return { [field]: direction };
+  }
 
-    // Handle format: 'field:direction' or 'field'
-    const [field, dir] = sortParam.split(':');
-
-    if (!ALLOWED_SORT_FIELDS.includes(field as typeof ALLOWED_SORT_FIELDS[number])) {
-        return defaultSort;
-    }
-
-    if (dir) {
-        if (!ALLOWED_SORT_DIRECTIONS.includes(dir as typeof ALLOWED_SORT_DIRECTIONS[number])) {
-            return defaultSort;
-        }
-        const direction = dir === 'desc' || dir === '-1' ? -1 : 1;
-        return { [field]: direction };
-    }
-
-    return { [field]: 1 };
+  return { [field]: 1 };
 };
 
 /**
@@ -54,70 +54,75 @@ const parseSortParam = (sortParam: unknown): Record<string, 1 | -1> => {
  * @access  Public
  */
 export const getAllListings = asyncHandler(async (req: Request, res: Response) => {
-    const {
-        category,
-        machineType,
-        location,
-        minPrice,
-        maxPrice,
-        condition,
-        brand,
-        search,
-        status = 'approved',
-        sort,
-        page = 1,
-        limit = 10,
-    } = req.query;
+  const {
+    category,
+    machineType,
+    location,
+    minPrice,
+    maxPrice,
+    condition,
+    brand,
+    search,
+    status = 'approved',
+    sort,
+    page = 1,
+    limit = 10,
+  } = req.query;
 
-    // Build query
-    const query: Record<string, unknown> = { status };
+  // Escape special regex characters to prevent ReDoS
+  const escapeRegex = (str: string): string => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
 
-    if (category) query.category = category;
-    if (machineType) query.machineType = machineType;
-    if (location) query.location = { $regex: location, $options: 'i' };
-    if (condition) query.condition = condition;
-    if (brand) query.brand = { $regex: brand, $options: 'i' };
+  // Build query
+  const query: Record<string, unknown> = { status };
 
-    if (minPrice || maxPrice) {
-        query.price = {};
-        if (minPrice) (query.price as Record<string, number>).$gte = Number(minPrice);
-        if (maxPrice) (query.price as Record<string, number>).$lte = Number(maxPrice);
-    }
+  if (category) query.category = category;
+  if (machineType) query.machineType = machineType;
+  if (location) query.location = { $regex: escapeRegex(location as string), $options: 'i' };
+  if (condition) query.condition = condition;
+  if (brand) query.brand = { $regex: escapeRegex(brand as string), $options: 'i' };
 
-    if (search) {
-        query.$text = { $search: search as string };
-    }
+  if (minPrice || maxPrice) {
+    query.price = {};
+    if (minPrice) (query.price as Record<string, number>).$gte = Number(minPrice);
+    if (maxPrice) (query.price as Record<string, number>).$lte = Number(maxPrice);
+  }
 
-    // Pagination
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(50, Math.max(1, Number(limit)));
-    const skip = (pageNum - 1) * limitNum;
+  if (search) {
+    query.$text = { $search: search as string };
+  }
 
-    // Validate and sanitize sort parameter
-    const sanitizedSort = parseSortParam(sort);
+  // Pagination
+  const pageNum = Math.max(1, Number(page));
+  const limitNum = Math.min(50, Math.max(1, Number(limit)));
+  const skip = (pageNum - 1) * limitNum;
 
-    // Execute query
-    const [listings, total] = await Promise.all([
-        Listing.find(query)
-            .populate('seller', 'name phone location rating')
-            .sort(sanitizedSort)
-            .skip(skip)
-            .limit(limitNum),
-        Listing.countDocuments(query),
-    ]);
+  // Validate and sanitize sort parameter
+  const sanitizedSort = parseSortParam(sort);
 
-    res.json({
-        success: true,
-        data: {
-            listings,
-            pagination: {
-                page: pageNum,
-                limit: limitNum,
-                total,
-                pages: Math.ceil(total / limitNum),
-            },
-        },
-    });
+  // Execute query
+  const [listings, total] = await Promise.all([
+    Listing.find(query)
+      .populate('seller', 'name phone location rating')
+      .sort(sanitizedSort)
+      .skip(skip)
+      .limit(limitNum),
+    Listing.countDocuments(query),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      listings,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    },
+  });
 });
 
 /**
@@ -126,21 +131,21 @@ export const getAllListings = asyncHandler(async (req: Request, res: Response) =
  * @access  Public
  */
 export const getListingById = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    const listing = await Listing.findById(id).populate('seller', 'name phone location rating');
+  const listing = await Listing.findById(id).populate('seller', 'name phone location rating');
 
-    if (!listing) {
-        throw Errors.notFound('Listing not found');
-    }
+  if (!listing) {
+    throw Errors.notFound('Listing not found');
+  }
 
-    // Increment views
-    await listing.incrementView();
+  // Increment views
+  await listing.incrementView();
 
-    res.json({
-        success: true,
-        data: { listing },
-    });
+  res.json({
+    success: true,
+    data: { listing },
+  });
 });
 
 /**
@@ -149,32 +154,32 @@ export const getListingById = asyncHandler(async (req: Request, res: Response) =
  * @access  Private
  */
 export const createListing = asyncHandler(async (req: Request, res: Response) => {
-    const seller = req.user;
+  const seller = req.user;
 
-    if (!seller) {
-        throw Errors.unauthorized('Not authenticated');
-    }
+  if (!seller) {
+    throw Errors.unauthorized('Not authenticated');
+  }
 
-    const listingData = {
-        ...req.body,
-        seller: seller._id,
-        sellerPhone: seller.phone,
-        sellerName: seller.name,
-    };
+  const listingData = {
+    ...req.body,
+    seller: seller._id,
+    sellerPhone: seller.phone,
+    sellerName: seller.name,
+  };
 
-    const listing = await Listing.create(listingData);
+  const listing = await Listing.create(listingData);
 
-    // Update user's listings count
-    seller.listingsCount += 1;
-    await seller.save();
+  // Update user's listings count
+  seller.listingsCount += 1;
+  await seller.save();
 
-    logger.info(`New listing created: ${listing._id} by ${seller.phone}`);
+  logger.info(`New listing created: ${listing._id} by ${seller.phone}`);
 
-    res.status(201).json({
-        success: true,
-        message: 'Listing created successfully',
-        data: { listing },
-    });
+  res.status(201).json({
+    success: true,
+    message: 'Listing created successfully',
+    data: { listing },
+  });
 });
 
 /**
@@ -183,37 +188,37 @@ export const createListing = asyncHandler(async (req: Request, res: Response) =>
  * @access  Private (owner only)
  */
 export const updateListing = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const user = req.user;
+  const { id } = req.params;
+  const user = req.user;
 
-    if (!user) {
-        throw Errors.unauthorized('Not authenticated');
-    }
+  if (!user) {
+    throw Errors.unauthorized('Not authenticated');
+  }
 
-    let listing = await Listing.findById(id);
+  let listing = await Listing.findById(id);
 
-    if (!listing) {
-        throw Errors.notFound('Listing not found');
-    }
+  if (!listing) {
+    throw Errors.notFound('Listing not found');
+  }
 
-    // Check ownership
-    if (listing.seller.toString() !== user._id.toString() && user.role !== 'admin') {
-        throw Errors.forbidden('Not authorized to update this listing');
-    }
+  // Check ownership
+  if (listing.seller.toString() !== user._id.toString() && user.role !== 'admin') {
+    throw Errors.forbidden('Not authorized to update this listing');
+  }
 
-    // Update
-    listing = await Listing.findByIdAndUpdate(id, req.body, {
-        new: true,
-        runValidators: true,
-    });
+  // Update
+  listing = await Listing.findByIdAndUpdate(id, req.body, {
+    new: true,
+    runValidators: true,
+  });
 
-    logger.info(`Listing updated: ${id} by ${user.phone}`);
+  logger.info(`Listing updated: ${id} by ${user.phone}`);
 
-    res.json({
-        success: true,
-        message: 'Listing updated successfully',
-        data: { listing },
-    });
+  res.json({
+    success: true,
+    message: 'Listing updated successfully',
+    data: { listing },
+  });
 });
 
 /**
@@ -222,34 +227,34 @@ export const updateListing = asyncHandler(async (req: Request, res: Response) =>
  * @access  Private (owner only)
  */
 export const deleteListing = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const user = req.user;
+  const { id } = req.params;
+  const user = req.user;
 
-    if (!user) {
-        throw Errors.unauthorized('Not authenticated');
-    }
+  if (!user) {
+    throw Errors.unauthorized('Not authenticated');
+  }
 
-    const listing = await Listing.findById(id);
+  const listing = await Listing.findById(id);
 
-    if (!listing) {
-        throw Errors.notFound('Listing not found');
-    }
+  if (!listing) {
+    throw Errors.notFound('Listing not found');
+  }
 
-    // Check ownership
-    if (listing.seller.toString() !== user._id.toString() && user.role !== 'admin') {
-        throw Errors.forbidden('Not authorized to delete this listing');
-    }
+  // Check ownership
+  if (listing.seller.toString() !== user._id.toString() && user.role !== 'admin') {
+    throw Errors.forbidden('Not authorized to delete this listing');
+  }
 
-    // Soft delete
-    listing.status = 'archived';
-    await listing.save();
+  // Soft delete
+  listing.status = 'archived';
+  await listing.save();
 
-    logger.info(`Listing deleted: ${id} by ${user.phone}`);
+  logger.info(`Listing deleted: ${id} by ${user.phone}`);
 
-    res.json({
-        success: true,
-        message: 'Listing deleted successfully',
-    });
+  res.json({
+    success: true,
+    message: 'Listing deleted successfully',
+  });
 });
 
 /**
@@ -258,42 +263,42 @@ export const deleteListing = asyncHandler(async (req: Request, res: Response) =>
  * @access  Private
  */
 export const getMyListings = asyncHandler(async (req: Request, res: Response) => {
-    const user = req.user;
+  const user = req.user;
 
-    if (!user) {
-        throw Errors.unauthorized('Not authenticated');
-    }
+  if (!user) {
+    throw Errors.unauthorized('Not authenticated');
+  }
 
-    const { status, page = 1, limit = 10 } = req.query;
+  const { status, page = 1, limit = 10 } = req.query;
 
-    const query: Record<string, unknown> = {
-        seller: user._id,
-        status: { $ne: 'archived' },
-    };
+  const query: Record<string, unknown> = {
+    seller: user._id,
+    status: { $ne: 'archived' },
+  };
 
-    if (status) query.status = status;
+  if (status) query.status = status;
 
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(50, Math.max(1, Number(limit)));
-    const skip = (pageNum - 1) * limitNum;
+  const pageNum = Math.max(1, Number(page));
+  const limitNum = Math.min(50, Math.max(1, Number(limit)));
+  const skip = (pageNum - 1) * limitNum;
 
-    const [listings, total] = await Promise.all([
-        Listing.find(query).sort('-createdAt').skip(skip).limit(limitNum),
-        Listing.countDocuments(query),
-    ]);
+  const [listings, total] = await Promise.all([
+    Listing.find(query).sort('-createdAt').skip(skip).limit(limitNum),
+    Listing.countDocuments(query),
+  ]);
 
-    res.json({
-        success: true,
-        data: {
-            listings,
-            pagination: {
-                page: pageNum,
-                limit: limitNum,
-                total,
-                pages: Math.ceil(total / limitNum),
-            },
-        },
-    });
+  res.json({
+    success: true,
+    data: {
+      listings,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    },
+  });
 });
 
 /**
@@ -302,24 +307,24 @@ export const getMyListings = asyncHandler(async (req: Request, res: Response) =>
  * @access  Public
  */
 export const sendInquiry = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    const listing = await Listing.findById(id);
+  const listing = await Listing.findById(id);
 
-    if (!listing) {
-        throw Errors.notFound('Listing not found');
-    }
+  if (!listing) {
+    throw Errors.notFound('Listing not found');
+  }
 
-    await listing.incrementInquiry();
+  await listing.incrementInquiry();
 
-    res.json({
-        success: true,
-        message: 'Inquiry sent successfully',
-        data: {
-            sellerPhone: listing.sellerPhone,
-            sellerName: listing.sellerName,
-        },
-    });
+  res.json({
+    success: true,
+    message: 'Inquiry sent successfully',
+    data: {
+      sellerPhone: listing.sellerPhone,
+      sellerName: listing.sellerName,
+    },
+  });
 });
 
 /**
@@ -328,18 +333,18 @@ export const sendInquiry = asyncHandler(async (req: Request, res: Response) => {
  * @access  Public
  */
 export const trackWhatsAppClick = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
+  const { id } = req.params;
 
-    const listing = await Listing.findById(id);
+  const listing = await Listing.findById(id);
 
-    if (!listing) {
-        throw Errors.notFound('Listing not found');
-    }
+  if (!listing) {
+    throw Errors.notFound('Listing not found');
+  }
 
-    await listing.incrementWhatsAppClicks();
+  await listing.incrementWhatsAppClicks();
 
-    res.json({
-        success: true,
-        message: 'WhatsApp click tracked',
-    });
+  res.json({
+    success: true,
+    message: 'WhatsApp click tracked',
+  });
 });
