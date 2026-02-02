@@ -85,8 +85,12 @@ export const getAllListings = asyncHandler(async (req: Request, res: Response) =
 
   if (minPrice || maxPrice) {
     query.price = {};
-    if (minPrice) (query.price as Record<string, number>).$gte = Number(minPrice);
-    if (maxPrice) (query.price as Record<string, number>).$lte = Number(maxPrice);
+    const minPriceNum = Number(minPrice);
+    const maxPriceNum = Number(maxPrice);
+    if (minPrice && !isNaN(minPriceNum)) (query.price as Record<string, number>).$gte = minPriceNum;
+    if (maxPrice && !isNaN(maxPriceNum)) (query.price as Record<string, number>).$lte = maxPriceNum;
+    // Remove empty price object if no valid constraints
+    if (Object.keys(query.price as object).length === 0) delete query.price;
   }
 
   if (search) {
@@ -160,11 +164,35 @@ export const createListing = asyncHandler(async (req: Request, res: Response) =>
     throw Errors.unauthorized('Not authenticated');
   }
 
+  // Allowlist of fields that can be set by users
+  const allowedFields = [
+    'title',
+    'description',
+    'category',
+    'machineType',
+    'brand',
+    'model',
+    'year',
+    'condition',
+    'price',
+    'location',
+    'images',
+    'specifications',
+  ];
+
+  const sanitizedBody: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (req.body[field] !== undefined) {
+      sanitizedBody[field] = req.body[field];
+    }
+  }
+
   const listingData = {
-    ...req.body,
+    ...sanitizedBody,
     seller: seller._id,
     sellerPhone: seller.phone,
     sellerName: seller.name,
+    status: 'pending', // Force initial status
   };
 
   const listing = await Listing.create(listingData);
@@ -206,8 +234,30 @@ export const updateListing = asyncHandler(async (req: Request, res: Response) =>
     throw Errors.forbidden('Not authorized to update this listing');
   }
 
+  const allowedFields = [
+    'title',
+    'description',
+    'category',
+    'machineType',
+    'brand',
+    'model',
+    'year',
+    'condition',
+    'price',
+    'location',
+    'images',
+    'specifications',
+  ];
+
+  const sanitizedBody: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (req.body[field] !== undefined) {
+      sanitizedBody[field] = req.body[field];
+    }
+  }
+
   // Update
-  listing = await Listing.findByIdAndUpdate(id, req.body, {
+  listing = await Listing.findByIdAndUpdate(id, sanitizedBody, {
     new: true,
     runValidators: true,
   });
@@ -248,6 +298,10 @@ export const deleteListing = asyncHandler(async (req: Request, res: Response) =>
   // Soft delete
   listing.status = 'archived';
   await listing.save();
+
+  // Decrement user's listings count
+  user.listingsCount = Math.max(0, user.listingsCount - 1);
+  await user.save();
 
   logger.info(`Listing deleted: ${id} by ${user.phone}`);
 
@@ -303,11 +357,27 @@ export const getMyListings = asyncHandler(async (req: Request, res: Response) =>
 
 /**
  * @route   POST /api/listings/:id/inquiry
- * @desc    Send inquiry for a listing (increments inquiry count)
- * @access  Public
+ * @desc    Send inquiry for a listing and get seller contact info
+ * @access  Private (authentication required to protect seller PII)
+ *
+ * SECURITY NOTE: This endpoint requires authentication to prevent unauthorized
+ * access to seller contact information (sellerPhone, sellerName).
+ * The incrementInquiry() method is still called to track legitimate interest,
+ * but contact details are only returned to authenticated users to prevent:
+ * - Mass scraping of seller contact information
+ * - Spam/harassment of sellers by unauthenticated parties
+ * - Privacy violations and GDPR compliance issues
+ *
+ * For rate limiting and CAPTCHA protection, implement middleware at the route level.
  */
 export const sendInquiry = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
+  const user = req.user;
+
+  // Enforce authentication before exposing seller PII
+  if (!user) {
+    throw Errors.unauthorized('Authentication required to access seller contact information');
+  }
 
   const listing = await Listing.findById(id);
 
@@ -315,8 +385,17 @@ export const sendInquiry = asyncHandler(async (req: Request, res: Response) => {
     throw Errors.notFound('Listing not found');
   }
 
+  // Prevent sellers from inquiring about their own listings
+  if (listing.seller.toString() === user._id.toString()) {
+    throw Errors.badRequest('Cannot inquire about your own listing');
+  }
+
+  // Increment inquiry count (tracks legitimate interest)
   await listing.incrementInquiry();
 
+  logger.info(`Inquiry sent for listing ${id} by authenticated user ${user.phone}`);
+
+  // Only return seller contact info to authenticated users
   res.json({
     success: true,
     message: 'Inquiry sent successfully',

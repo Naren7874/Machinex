@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import {
-    getAllListings,
-    getListingById,
-    createListing,
-    updateListing,
-    deleteListing,
-    getMyListings,
-    sendInquiry,
-    trackWhatsAppClick,
+  getAllListings,
+  getListingById,
+  createListing,
+  updateListing,
+  deleteListing,
+  getMyListings,
+  sendInquiry,
+  trackWhatsAppClick,
 } from '../controllers/listing.controller';
 import { authenticate, optionalAuth } from '../middleware/auth';
 
@@ -57,10 +57,10 @@ router.delete('/:id', authenticate, deleteListing);
 
 /**
  * @route   POST /api/listings/:id/inquiry
- * @desc    Send inquiry for a listing
- * @access  Public
+ * @desc    Send inquiry for a listing and get seller contact info
+ * @access  Private (authentication required to protect seller PII)
  */
-router.post('/:id/inquiry', sendInquiry);
+router.post('/:id/inquiry', authenticate, sendInquiry);
 
 /**
  * @route   POST /api/listings/:id/whatsapp-click
