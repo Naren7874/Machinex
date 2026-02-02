@@ -103,6 +103,29 @@ MachineryMart is an AI-powered marketplace for buying and selling heavy machiner
 
 ---
 
+## 🗄️ Database Schema
+
+### Entity Relationship Diagram
+
+![Database ER Diagram](docs/database_diagram.png)
+
+### Models (10 Collections)
+
+| Model | Purpose |
+|-------|---------|
+| **User** | Users, Brokers, Admins with phone-based auth |
+| **Listing** | Machinery listings with AI analysis |
+| **Order** | Transactions with escrow & negotiation |
+| **Conversation** | Chat threads between users |
+| **Message** | Individual messages with WhatsApp status |
+| **Payment** | Razorpay integration & refunds |
+| **BotState** | WhatsApp bot flow state machine |
+| **Gallery** | Image management with AI labels |
+| **Analytics** | Daily platform metrics |
+| **SystemLog** | Application logs (90-day TTL) |
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -130,6 +153,7 @@ machinery-mart/
 │   │   └── App.tsx         # Root component
 │   └── package.json
 │
+├── docs/                   # Documentation & diagrams
 ├── package.json            # Root package.json
 ├── .gitignore
 └── README.md
